@@ -52,12 +52,32 @@ const insertBookHandler = (request, h) => {
     return response;
 };
 
-const getAllBooksHandler = () => ({
-    status: 'success',
-    data: {
-        books : books.map(({id, name, publisher}) => ({id, name, publisher})),
-    },
-});
+const getAllBooksHandler = (request, h) => {
+    const { finished } = request.query;
+
+    if(finished){
+        let booksFinished;
+        if(finished === '0'){
+            booksFinished = books.filter((bf) => bf.finished === false)
+        } else if(finished === '1'){
+            booksFinished = books.filter((bf) => bf.finished === true)
+        }
+
+        return {
+            status: 'success',
+            data: {
+                books: booksFinished.map(({id, name, publisher}) => ({id, name, publisher})),
+            },
+        };
+    }
+
+    return {
+        status: 'success',
+        data: {
+            books: books.map(({id, name, publisher}) => ({id, name, publisher})),
+        },
+    };
+};
 
 const getBookByIdHandler = (request, h) => {
     const {bookId} = request.params;
