@@ -1,17 +1,11 @@
 const { nanoid } = require('nanoid')
-const books = require('./books')
+require('../utils/db')
+const Books = require('../model/books')
 
-const insertBookHandler = (request, h) => {
+const insertBookHandler = async (request, h) => {
   const { name, year, author, summary, publisher, pageCount, readPage, reading } = request.payload
 
-  if (!name) {
-    const response = h.response({
-      status: 'fail',
-      message: 'Gagal menambahkan buku. Mohon isi nama buku'
-    })
-    response.code(400)
-    return response
-  } else if (readPage > pageCount) {
+  if (readPage > pageCount) {
     const response = h.response({
       status: 'fail',
       message: 'Gagal menambahkan buku. readPage tidak boleh lebih besar dari pageCount'
@@ -25,118 +19,132 @@ const insertBookHandler = (request, h) => {
   const insertedAt = new Date().toISOString()
   const updatedAt = insertedAt
 
-  const newBook = {
+  const newBook = new Books({
     id, name, year, author, summary, publisher, pageCount, readPage, finished, reading, insertedAt, updatedAt
-  }
+  })
 
-  books.push(newBook)
+  try {
+    await newBook.save()
 
-  const isSuccess = books.filter((book) => book.id === id).length > 0
-  if (isSuccess) {
+    const isInputted = await Books.findOne({ id })
+    if (isInputted) {
+      const response = h.response({
+        status: 'success',
+        message: 'Buku berhasil ditambahkan',
+        data: {
+          bookId: id
+        }
+      })
+      response.code(201)
+      return response
+    }
+  } catch (error) {
     const response = h.response({
-      status: 'success',
-      message: 'Buku berhasil ditambahkan',
-      data: {
-        bookId: id
-      }
+      status: 'fail',
+      message: 'Gagal menambahkan buku'
     })
-    response.code(201)
+    response.code(500)
     return response
   }
-
-  const response = h.response({
-    status: 'fail',
-    message: 'Gagal menambahkan buku'
-  })
-  response.code(500)
-  return response
 }
 
-const getAllBooksHandler = (request, h) => {
+const getAllBooksHandler = async (request, h) => {
   const { name, reading, finished } = request.query
 
-  if (name) {
-    const booksName = books.filter((bn) => bn.name.toLowerCase().includes(name.toLowerCase()))
+  try {
+    if (name) {
+      const booksName = await Books.find({ name: { $regex: name, $options: 'i' } })
 
+      return {
+        status: 'success',
+        data: {
+          books: booksName.map(({ id, name, publisher }) => ({ id, name, publisher }))
+        }
+      }
+    } else if (reading) {
+      let booksReading
+      if (reading === '0') {
+        booksReading = await Books.find({ reading: false })
+      } else if (reading === '1') {
+        booksReading = await Books.find({ reading: true })
+      }
+
+      return {
+        status: 'success',
+        data: {
+          books: booksReading.map(({ id, name, publisher }) => ({ id, name, publisher }))
+        }
+      }
+    } else if (finished) {
+      let booksFinished
+      if (finished === '0') {
+        booksFinished = await Books.find({ finished: false })
+      } else if (finished === '1') {
+        booksFinished = await Books.find({ finished: true })
+      }
+
+      return {
+        status: 'success',
+        data: {
+          books: booksFinished.map(({ id, name, publisher }) => ({ id, name, publisher }))
+        }
+      }
+    }
+
+    const books = await Books.find()
     return {
       status: 'success',
       data: {
-        books: booksName.map(({ id, name, publisher }) => ({ id, name, publisher }))
+        books: books.map(({ id, name, publisher }) => ({ id, name, publisher }))
       }
     }
-  } else if (reading) {
-    let booksReading
-    if (reading === '0') {
-      booksReading = books.filter((br) => br.reading === false)
-    } else if (reading === '1') {
-      booksReading = books.filter((br) => br.reading === true)
-    }
-
-    return {
-      status: 'success',
-      data: {
-        books: booksReading.map(({ id, name, publisher }) => ({ id, name, publisher }))
-      }
-    }
-  } else if (finished) {
-    let booksFinished
-    if (finished === '0') {
-      booksFinished = books.filter((bf) => bf.finished === false)
-    } else if (finished === '1') {
-      booksFinished = books.filter((bf) => bf.finished === true)
-    }
-
-    return {
-      status: 'success',
-      data: {
-        books: booksFinished.map(({ id, name, publisher }) => ({ id, name, publisher }))
-      }
-    }
-  }
-
-  return {
-    status: 'success',
-    data: {
-      books: books.map(({ id, name, publisher }) => ({ id, name, publisher }))
-    }
+  } catch (error) {
+    const response = h.response({
+      status: 'fail',
+      message: 'Gagal melakukan fetch buku'
+    })
+    response.code(500)
+    return response
   }
 }
 
-const getBookByIdHandler = (request, h) => {
+const getBookByIdHandler = async (request, h) => {
   const { bookId } = request.params
 
-  const book = books.filter((b) => b.id === bookId)[0]
+  try {
+    const book = await Books.findOne({ id: bookId })
 
-  if (book !== undefined) {
-    return {
-      status: 'success',
-      data: {
-        book
+    if (book) {
+      return {
+        status: 'success',
+        data: {
+          book
+        }
       }
     }
-  }
 
-  const response = h.response({
-    status: 'fail',
-    message: 'Buku tidak ditemukan'
-  })
-  response.code(404)
-  return response
+    const response = h.response({
+      status: 'fail',
+      message: 'Buku tidak ditemukan'
+    })
+    response.code(404)
+    return response
+  } catch (error) {
+    const response = h.response({
+      status: 'fail',
+      message: 'Gagal melakukan fetch buku'
+    })
+    response.code(500)
+    return response
+  }
 }
 
-const editBookByIdHandler = (request, h) => {
+const editBookByIdHandler = async (request, h) => {
   const { bookId } = request.params
 
   const { name, year, author, summary, publisher, pageCount, readPage, reading } = request.payload
 
-  if (!name) {
-    const response = h.response({
-      status: 'fail',
-      message: 'Gagal memperbarui buku. Mohon isi nama buku'
-    })
-    response.code(400)
-    return response
-  } else if (readPage > pageCount) {
+  if (readPage > pageCount) {
     const response = h.response({
       status: 'fail',
       message: 'Gagal memperbarui buku. readPage tidak boleh lebih besar dari pageCount'
@@ -147,57 +155,76 @@ const editBookByIdHandler = (request, h) => {
 
   const updatedAt = new Date().toISOString()
 
-  const index = books.findIndex((book) => book.id === bookId)
-  if (index !== -1) {
-    books[index] = {
-      ...books[index],
-      name,
-      year,
-      author,
-      summary,
-      publisher,
-      pageCount,
-      readPage,
-      reading,
-      updatedAt
+  try {
+    const updateBook = await Books.updateOne(
+      { id: bookId },
+      {
+        name,
+        year,
+        author,
+        summary,
+        publisher,
+        pageCount,
+        readPage,
+        reading,
+        updatedAt
+      }
+    )
+
+    if (updateBook.modifiedCount === 1) {
+      const response = h.response({
+        status: 'success',
+        message: 'Buku berhasil diperbarui'
+      })
+      response.code(200)
+      return response
     }
 
     const response = h.response({
-      status: 'success',
-      message: 'Buku berhasil diperbarui'
+      status: 'fail',
+      message: 'Gagal memperbarui buku. Id tidak ditemukan'
     })
-    response.code(200)
+    response.code(404)
+    return response
+  } catch (error) {
+    const response = h.response({
+      status: 'fail',
+      message: 'Gagal memperbarui buku'
+    })
+    response.code(500)
     return response
   }
-
-  const response = h.response({
-    status: 'fail',
-    message: 'Gagal memperbarui buku. Id tidak ditemukan'
-  })
-  response.code(404)
-  return response
 }
 
-const deleteBookByIdHandler = (request, h) => {
+const deleteBookByIdHandler = async (request, h) => {
   const { bookId } = request.params
 
-  const index = books.findIndex((book) => book.id === bookId)
-  if (index !== -1) {
-    books.splice(index, 1)
+  try {
+    const deleteNote = await Books.deleteOne({ id: bookId })
+
+    if (deleteNote.deletedCount === 1) {
+      const response = h.response({
+        status: 'success',
+        message: 'Buku berhasil dihapus'
+      })
+      response.code(200)
+      return response
+    }
+
     const response = h.response({
-      status: 'success',
-      message: 'Buku berhasil dihapus'
+      status: 'fail',
+      message: 'Buku gagal dihapus. Id tidak ditemukan'
     })
-    response.code(200)
+    response.code(404)
+    return response
+  } catch (error) {
+    const response = h.response({
+      status: 'fail',
+      message: 'Gagal menghapus buku'
+    })
+    response.code(500)
     return response
   }
-
-  const response = h.response({
-    status: 'fail',
-    message: 'Buku gagal dihapus. Id tidak ditemukan'
-  })
-  response.code(404)
-  return response
 }
 
 module.exports = { insertBookHandler, getAllBooksHandler, getBookByIdHandler, editBookByIdHandler, deleteBookByIdHandler }
